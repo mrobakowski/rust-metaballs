@@ -1,9 +1,5 @@
-Najciekawszym plikiem w tym projekcie jest ./src/Shaders/metaball_geometry.glsl - tutaj znajduje się implementacja marching cubes na gpu.
+# rust-metaballs
 
-Cały kod oprócz shaderów jest napisany w języku Rust - https://www.rust-lang.org/
-main.rs jest napisany raczej brzydko i wymaga refactoringu... Kiedy i jeśli to zrobię to prawdopodobnie opublikuję kod na GitHubie
+This is an old project of mine done for a graphics course at Wrocław University of Technology.
 
-Instrukcje budowania:
-
-1) zainstalować Rusta (polecam multirust (Unix), lub multirust-rs (Windows) po czym w konsoli `multirust update nightly; multirust default nightly`)
-2) komenda `cargo run` wywołana w głównym folderze projektu (folder z Cargo.toml) powinna ściągnąć wszystkie zależności, zbudować, i uruchomić program
+It was written in an old version of rust and it probably no longer compiles.
