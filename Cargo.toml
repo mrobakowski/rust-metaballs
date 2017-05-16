@@ -1,0 +1,13 @@
+[package]
+name = "rust-metaballs"
+version = "0.1.0"
+authors = ["mikolaj.rob@gmail.com"]
+
+[dependencies]
+glium = "*"
+itertools = "*"
+nalgebra = "*"
+piston3d-cam = { git = "https://github.com/PistonDevelopers/cam" }
+vecmath = "0.2.0"
+rand = "*"
+time = "*"
