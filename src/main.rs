@@ -1,10 +1,7 @@
 // TODO: This file is utter mess, should be refactored
 
-#![feature(collections)]
-
 #[macro_use]
 extern crate glium;
-extern crate collections;
 #[macro_use]
 extern crate itertools;
 extern crate nalgebra as na;
@@ -16,12 +13,12 @@ extern crate time;
 mod marching_cubes_data;
 mod linspace;
 
-use glium::{DisplayBuild, Surface};
-use glium::backend::glutin_backend::GlutinFacade;
+use glium::Surface;
+use glium::backend::glutin::Display;
 use linspace::linspace;
 use glium::texture::buffer_texture::BufferTexture;
 use glium::texture::buffer_texture::BufferTextureType;
-use glium::glutin::Event;
+use glium::glutin::{Event, WindowEvent, dpi::{LogicalSize, LogicalPosition}, KeyboardInput};
 use glium::glutin::ElementState;
 use glium::glutin::VirtualKeyCode;
 use cam::{Camera, CameraPerspective};
@@ -43,6 +40,7 @@ impl Default for Vertex {
         Vertex { position: [0.0f32, 0.0, 0.0] }
     }
 }
+
 #[derive(Copy, Clone)]
 struct BorderVertex {
     position: [f32; 3],
@@ -59,15 +57,14 @@ impl BorderVertex {
     }
 }
 
-fn create_tri_table_texture(display: &GlutinFacade) -> BufferTexture<(i8, i8, i8, i8)> {
+fn create_tri_table_texture(display: &Display) -> BufferTexture<(i8, i8, i8, i8)> {
     BufferTexture::immutable(display,
                              &marching_cubes_data::tri_table(),
                              BufferTextureType::Integral)
         .expect("could not create triangle table buffer")
 }
 
-fn load_shaders(display: &GlutinFacade) -> (glium::Program, glium::Program) {
-
+fn load_shaders(display: &Display) -> (glium::Program, glium::Program) {
     let vertex_shader_src = include_str!("Shaders/metaball_vertex.glsl");
     let geometry_shader_src = include_str!("Shaders/metaball_geometry.glsl");
     let fragment_shader_src = include_str!("Shaders/metaball_fragment.glsl");
@@ -75,7 +72,7 @@ fn load_shaders(display: &GlutinFacade) -> (glium::Program, glium::Program) {
                                                        vertex_shader_src,
                                                        fragment_shader_src,
                                                        Some(geometry_shader_src))
-                               .expect("couldn't create border program");
+        .expect("couldn't create border program");
 
     let border_vertex_shader = include_str!("Shaders/border_vertex.glsl");
     let border_fragment_shader = include_str!("Shaders/border_fragment.glsl");
@@ -83,7 +80,7 @@ fn load_shaders(display: &GlutinFacade) -> (glium::Program, glium::Program) {
                                                      border_vertex_shader,
                                                      border_fragment_shader,
                                                      None)
-                             .expect("couldn't create border program");
+        .expect("couldn't create border program");
 
     (metaball_program, border_program)
 }
@@ -99,13 +96,13 @@ fn get_grid(a: f32, b: f32, resolution: usize) -> Vec<Vertex> {
 fn get_border_vertices(start: f32, end: f32) -> Vec<BorderVertex> {
     let mut res = Vec::with_capacity(36);
     let v = [(start, start, start),
-             (end, start, start),
-             (end, end, start),
-             (start, end, start),
-             (start, start, end),
-             (end, start, end),
-             (end, end, end),
-             (start, end, end)];
+        (end, start, start),
+        (end, end, start),
+        (start, end, start),
+        (start, start, end),
+        (end, start, end),
+        (end, end, end),
+        (start, end, end)];
     for face in 0..6 {
         let _00 = match face {
             0 => v[0],
@@ -155,16 +152,22 @@ fn get_border_vertices(start: f32, end: f32) -> Vec<BorderVertex> {
     res
 }
 
-fn get_border_texture(display: &GlutinFacade) -> Texture2d {
+fn get_border_texture(display: &Display) -> Texture2d {
     let (dim_x, dim_y) = (32, 32);
     let mut data = Vec::with_capacity(dim_x * dim_y);
     for y in 0..dim_y {
         for x in 0..dim_x {
-            data.push(if x < dim_x / 16 || y < dim_y / 16 {
-                (0u8, 0u8, 0u8, 255u8)
+            if x < dim_x / 16 || y < dim_y / 16 {
+                data.push(0u8);
+                data.push(0);
+                data.push(0);
+                data.push(255);
             } else {
-                (0, 0, 0, 0)
-            });
+                data.push(0);
+                data.push(0);
+                data.push(0);
+                data.push(0);
+            }
         }
     }
     let raw_tex = RawImage2d::from_raw_rgba(data, (dim_x as u32, dim_y as u32));
@@ -190,7 +193,7 @@ fn update_metaball_positions(metaballs: &mut [(f32, f32, f32, f32)], t: f32) {
     }
 }
 
-fn change_resolution(display: &GlutinFacade,
+fn change_resolution(display: &Display,
                      space_start: f32,
                      space_end: f32,
                      resolution: usize)
@@ -205,10 +208,11 @@ fn recalculate_step(space_start: f32, space_end: f32, resolution: usize) -> f32 
 }
 
 fn main() {
-    let display = glium::glutin::WindowBuilder::new()
-                      .with_depth_buffer(24)
-                      .build_glium()
-                      .unwrap();
+    let mut events_loop = glium::glutin::EventsLoop::new();
+    let window = glium::glutin::WindowBuilder::new();
+    let context = glium::glutin::ContextBuilder::new().with_depth_buffer(24);
+    let display = glium::Display::new(window, context, &events_loop).unwrap();
+
     let mut resolution = 100usize;
     let space_start = -2.0f32;
     let space_end = 2.0f32;
@@ -221,13 +225,13 @@ fn main() {
     let border_texture = get_border_texture(&display);
     let border_texture =
         border_texture.sampled()
-                      .wrap_function(glium::uniforms::SamplerWrapFunction::Repeat)
-                      .minify_filter(glium::uniforms::MinifySamplerFilter::LinearMipmapLinear)
-                      .magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
-                      .anisotropy(16);
+            .wrap_function(glium::uniforms::SamplerWrapFunction::Repeat)
+            .minify_filter(glium::uniforms::MinifySamplerFilter::LinearMipmapLinear)
+            .magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+            .anisotropy(16);
     let border = get_border_vertices(space_start, space_end);
     let border_vertex_buf = glium::VertexBuffer::new(&display, &border)
-                                .expect("could not create vertex buffer with borders");
+        .expect("could not create vertex buffer with borders");
     let border_indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
 
     let tri_table = create_tri_table_texture(&display);
@@ -264,23 +268,24 @@ fn main() {
     let mut now: f64;
     let mut previous = 0.0f64;
     let mut r_down = false;
+    let mut running = true;
 
-    loop {
+    while running {
         now = time::precise_time_s();
         let delta = (now - previous) as f32;
         t += dt * delta;
 
         let cam_pos = camera.position;
-        let cam_pos: &na::Vec3<_> = (&cam_pos).into();
+        let cam_pos: na::Vector3<_> = cam_pos.into();
         let cam_dir = camera.forward;
-        let cam_dir: &na::Vec3<_> = (&cam_dir).into();
+        let cam_dir: na::Vector3<_> = cam_dir.into();
         let sideways = camera.right;
-        let sideways: &na::Vec3<_> = (&sideways).into();
+        let sideways: na::Vector3<_> = sideways.into();
         let upwards = camera.up;
-        let upwards: &na::Vec3<_> = (&upwards).into();
-        let new_cam_pos = *cam_pos + *cam_dir * directionwise_move_factor * delta * 2.0;
-        let new_cam_pos = new_cam_pos + *sideways * sidewise_move_factor * delta * 2.0;
-        let new_cam_pos = new_cam_pos + *upwards * upwards_move_factor * delta * 2.0;
+        let upwards: na::Vector3<_> = upwards.into();
+        let new_cam_pos = cam_pos + cam_dir * directionwise_move_factor * delta * 2.0;
+        let new_cam_pos = new_cam_pos + sideways * sidewise_move_factor * delta * 2.0;
+        let new_cam_pos = new_cam_pos + upwards * upwards_move_factor * delta * 2.0;
         camera.position = *new_cam_pos.as_ref();
 
         update_metaball_positions(&mut metaballs, t);
@@ -315,7 +320,7 @@ fn main() {
                     &border_program,
                     &border_uniforms,
                     &border_params)
-              .unwrap();
+            .unwrap();
 
         // this scope is important, since we don't want the metaballs_buffer to be borrowed
         // for the rest of the loop
@@ -343,130 +348,102 @@ fn main() {
             };
 
             target.draw(&vertex_buffer, &indices, &program, &uniforms, &params)
-                  .unwrap();
+                .unwrap();
             target.finish().unwrap();
         }
 
-        for ev in display.poll_events() {
+        macro_rules! kbd {
+            (pressed $key:ident) => {
+                WindowEvent::KeyboardInput { input: KeyboardInput { state: ElementState::Pressed, virtual_keycode: Some(VirtualKeyCode::$key), .. }, .. }
+            };
+            (released $key:ident) => {
+                WindowEvent::KeyboardInput { input: KeyboardInput { state: ElementState::Released, virtual_keycode: Some(VirtualKeyCode::$key), .. }, .. }
+            };
+        }
+
+        events_loop.poll_events(|ev| {
             match ev {
-                Event::Closed => return,
-                Event::Resized(w, h) => camera_perspective.aspect_ratio = w as f32 / h as f32,
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::LControl)) => {
-                    ctrl_down = true
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::LControl)) => {
-                    ctrl_down = false
-                }
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::R)) => {
-                    r_down = true
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::R)) => {
-                    r_down = false
-                }
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::CloseRequested | WindowEvent::Destroyed => running = false,
+                    WindowEvent::Resized(LogicalSize { width, height }) =>
+                        camera_perspective.aspect_ratio = width as f32 / height as f32,
+                    kbd!(pressed LControl) => ctrl_down = true,
+                    kbd!(released LControl) => ctrl_down = false,
+                    kbd!(pressed R) => r_down = true,
+                    kbd!(released R) => r_down = false,
+                    kbd!(pressed W) => directionwise_move_factor = -1.0,
+                    kbd!(released W) => directionwise_move_factor = 0.0,
+                    kbd!(pressed S) => directionwise_move_factor = 1.0,
+                    kbd!(released S) => directionwise_move_factor = 0.0,
+                    kbd!(pressed D) => sidewise_move_factor = 1.0,
+                    kbd!(released D) => sidewise_move_factor = 0.0,
+                    kbd!(pressed A) => sidewise_move_factor = -1.0,
+                    kbd!(released A) => sidewise_move_factor = 0.0,
+                    kbd!(pressed Space) => upwards_move_factor = 1.0,
+                    kbd!(released Space) => upwards_move_factor = 0.0,
+                    kbd!(pressed LShift) => upwards_move_factor = -1.0,
+                    kbd!(released LShift) => upwards_move_factor = 0.0,
+                    kbd!(released Q) => add_random_metaball(&mut metaballs, &mut metaballs_size),
+                    kbd!(released E) => remove_random_metaball(&mut metaballs_size),
 
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::W)) => {
-                    directionwise_move_factor = -1.0
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::W)) => {
-                    directionwise_move_factor = 0.0
-                }
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::S)) => {
-                    directionwise_move_factor = 1.0
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::S)) => {
-                    directionwise_move_factor = 0.0
-                }
+                    WindowEvent::MouseWheel { delta, .. } if r_down => {
+                        let amt = match delta {
+                            glium::glutin::MouseScrollDelta::LineDelta(_, y) => y,
+                            glium::glutin::MouseScrollDelta::PixelDelta(LogicalPosition { y, .. }) => y as f32,
+                        };
+                        println!("amt: {}", amt);
+                        resolution = cmp::max(
+                            cmp::min(
+                                resolution as i32 + amt as i32 * if resolution < 20 { 1 } else { 10 },
+                                200,
+                            ),
+                            2,
+                        ) as usize;
+                        vertex_buffer = change_resolution(&display, space_start, space_end, resolution);
+                        step = recalculate_step(space_start, space_end, resolution);
+                        println!("grid resolution: {}", resolution);
+                    }
+                    WindowEvent::MouseWheel { delta, .. } if ctrl_down => {
+                        let amt = match delta {
+                            glium::glutin::MouseScrollDelta::LineDelta(_, y) => y,
+                            glium::glutin::MouseScrollDelta::PixelDelta(LogicalPosition { y, .. }) => y as f32,
+                        };
+                        let fov = camera_perspective.fov;
+                        camera_perspective.fov = (fov + amt).min(120.0).max(10.0);
+                        println!("fov: {}", (fov + amt).min(120.0).max(10.0));
+                    }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        let amt = match delta {
+                            glium::glutin::MouseScrollDelta::LineDelta(_, y) => y,
+                            glium::glutin::MouseScrollDelta::PixelDelta(LogicalPosition { y, .. }) => y as f32,
+                        };
+                        dt += amt;
+                    }
 
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::D)) => {
-                    sidewise_move_factor = 1.0
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::D)) => {
-                    sidewise_move_factor = 0.0
-                }
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::A)) => {
-                    sidewise_move_factor = -1.0
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::A)) => {
-                    sidewise_move_factor = 0.0
-                }
+                    WindowEvent::MouseInput { state: ElementState::Pressed, button: glium::glutin::MouseButton::Right, .. } =>
+                        rmb_down = true,
+                    WindowEvent::MouseInput { state: ElementState::Released, button: glium::glutin::MouseButton::Right, .. } =>
+                        rmb_down = false,
 
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::Space)) => {
-                    upwards_move_factor = 1.0
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::Space)) => {
-                    upwards_move_factor = 0.0
-                }
-                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::LShift)) => {
-                    upwards_move_factor = -1.0
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::LShift)) => {
-                    upwards_move_factor = 0.0
-                }
-
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::Q)) => {
-                    add_random_metaball(&mut metaballs, &mut metaballs_size)
-                }
-                Event::KeyboardInput(ElementState::Released, _, Some(VirtualKeyCode::E)) => {
-                    remove_random_metaball(&mut metaballs_size)
-                }
-
-                Event::MouseWheel(delta) if r_down => {
-                    let amt = match delta {
-                        glium::glutin::MouseScrollDelta::LineDelta(_, a) => a,
-                        glium::glutin::MouseScrollDelta::PixelDelta(_, a) => a,
-                    };
-                    println!("amt: {}", amt);
-                    resolution = cmp::max(cmp::min(resolution as i32 +
-                                                   amt as i32 *
-                                                   if resolution < 20 {
-                                                       1
-                                                   } else {
-                                                       10
-                                                   },
-                                                   200),
-                                          2) as usize;
-                    vertex_buffer = change_resolution(&display, space_start, space_end, resolution);
-                    step = recalculate_step(space_start, space_end, resolution);
-                    println!("grid resolution: {}", resolution);
-                }
-                Event::MouseWheel(delta) if ctrl_down => {
-                    let amt = match delta {
-                        glium::glutin::MouseScrollDelta::LineDelta(_, a) => a,
-                        glium::glutin::MouseScrollDelta::PixelDelta(_, a) => a,
-                    };
-                    let fov = camera_perspective.fov;
-                    camera_perspective.fov = (fov + amt).min(120.0).max(10.0);
-                    println!("fov: {}", (fov + amt).min(120.0).max(10.0));
-                }
-                Event::MouseWheel(delta) => {
-                    let amt = match delta {
-                        glium::glutin::MouseScrollDelta::LineDelta(_, a) => a,
-                        glium::glutin::MouseScrollDelta::PixelDelta(_, a) => a,
-                    };
-                    dt += amt;
-                }
-
-                Event::MouseInput(ElementState::Pressed, glium::glutin::MouseButton::Right) => {
-                    rmb_down = true;
-                }
-                Event::MouseInput(ElementState::Released, glium::glutin::MouseButton::Right) => {
-                    rmb_down = false
-                }
-                Event::MouseMoved((x, y)) if rmb_down => {
-                    pitch = pitch - (y - mouse_y) as f32 / 1000.0;
-                    pitch = pitch.min(90.0f32.to_radians()).max(-90.0f32.to_radians());
-                    yaw = yaw + (x - mouse_x) as f32 / 1000.0;
-                    camera.set_yaw_pitch(yaw, pitch);
-                    mouse_x = x;
-                    mouse_y = y;
-                }
-                Event::MouseMoved((x, y)) => {
-                    mouse_x = x;
-                    mouse_y = y;
-                }
+                    WindowEvent::CursorMoved { position: LogicalPosition { x, y }, .. } if rmb_down => {
+                        let x = x as i32;
+                        let y = y as i32;
+                        pitch = pitch - (y - mouse_y) as f32 / 1000.0;
+                        pitch = pitch.min(90.0f32.to_radians()).max(-90.0f32.to_radians());
+                        yaw = yaw + (x - mouse_x) as f32 / 1000.0;
+                        camera.set_yaw_pitch(yaw, pitch);
+                        mouse_x = x;
+                        mouse_y = y;
+                    }
+                    WindowEvent::CursorMoved { position: LogicalPosition { x, y }, .. } => {
+                        mouse_x = x as i32;
+                        mouse_y = y as i32;
+                    }
+                    _ => (),
+                },
                 _ => (),
             }
-        }
+        });
 
         update_metaballs(&mut metaballs, &mut metaballs_buffer);
 

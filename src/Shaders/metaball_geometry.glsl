@@ -27,6 +27,7 @@ vec3 cubeVertex(int i) {
         case 6: return vec3(cubeSideLength, cubeSideLength, cubeSideLength);
         case 7: return vec3(0, cubeSideLength, cubeSideLength);
     }
+    return vec3(0, 0, 0);
 }
 
 vec3 cubePos(int i, vec3 cur_origin) {

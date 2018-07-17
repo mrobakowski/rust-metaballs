@@ -4,10 +4,10 @@ version = "0.1.0"
 authors = ["mikolaj.rob@gmail.com"]
 
 [dependencies]
-glium = "*"
-itertools = "*"
-nalgebra = "*"
-piston3d-cam = { git = "https://github.com/PistonDevelopers/cam" }
-vecmath = "0.2.0"
-rand = "*"
-time = "*"
+glium = "0.22.0"
+itertools = "0.7.8"
+nalgebra = "0.15.3"
+piston3d-cam = "0.3.0"
+vecmath = "0.3.1"
+rand = "0.4.2"
+time = "0.1.40"
